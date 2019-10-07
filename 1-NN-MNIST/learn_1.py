@@ -331,7 +331,7 @@ if __name__ == "__main__":
     print("Task 1 - MNIST NN Test Case")
     print("-" * 79)
 
-    train_model = True
+    train_model = False
 
     if train_model:
         train_x = parse_imgs("train/train-images-idx3-ubyte.gz")
@@ -346,6 +346,9 @@ if __name__ == "__main__":
         model_rmse = RMSE(test_x, test_y, model)
         print("Final RMSE Error = %.2f" % model_rmse)
     else:
+        test_x = parse_imgs("test/t10k-images-idx3-ubyte.gz")
+        test_y = parse_labels("test/t10k-labels-idx1-ubyte.gz")
+
         model = load_saved_model()
         # Test out RMSE again to see if we loaded it correctly
         model_rmse = RMSE(test_x, test_y, model)
