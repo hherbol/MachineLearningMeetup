@@ -239,8 +239,8 @@ def learn(x, y, tx, ty, batch_size=64, hidden_dim=32, learning_rate=1e-4):
             n_dash = total_update - n_eq
             line = "\r    |" + "=" * n_eq + "-" * n_dash +\
                 "| loss = %.2f " % loss +\
-                "RMSE = %.2f" % RMSE(tx, ty, model)
-            line = line + " " * (79 - len(line))
+                "Accuracy = %.2f" % accuracy(tx, ty, model)
+            line = line + " " * (99 - len(line))
             sys.stdout.write(line)
             sys.stdout.flush()
         # Forward pass: compute predicted y by passing x to the model.
@@ -270,7 +270,7 @@ def learn(x, y, tx, ty, batch_size=64, hidden_dim=32, learning_rate=1e-4):
 
     torch.cuda.synchronize()
     line = "\r    |" + "=" * total_update + "| loss = %.2f" % loss
-    line = line + " " * (79 - len(line))
+    line = line + " " * (99 - len(line))
     sys.stdout.write(line + "\nDONE!\n")
 
     # Test out saving the model to a file
@@ -307,11 +307,33 @@ def RMSE(test_x, test_y, model, verbose=False):
     return np.square(np.mean(np.sqrt(np.array(err))))
 
 
-def load_saved_model():
+def accuracy(test_x, test_y, model, verbose=False):
+    '''
+    Given data, test it and see what the RMS error is.
+    '''
+
+    # with model.no_grad():
+    device = torch.device("cuda:0")  # Uncomment this to run on GPU
+    test_x = test_x.to(device)
+    test_y = test_y.to(device)
+
+    err = []
+    if verbose:
+        print("Test    Model")
+    for x, y in zip(test_x, test_y):
+        model.eval()
+        yhat = model(x)
+        i1 = np.nanargmax(torch.Tensor.cpu(y))
+        i2 = np.nanargmax(torch.Tensor.cpu(yhat).detach())
+        err.append(i1 == i2)
+    return sum(err) / len(err) * 100.0
+
+
+def load_saved_model(hidden_dim=32):
     # Test out re-loading everything
     sys.stdout.write("Loading NN model from mnist.nn...")
     sys.stdout.flush()
-    D_in, D_out, hidden_dim = 784, 10, 32
+    D_in, D_out = 784, 10
     # device = torch.device("cpu")
     device = torch.device("cuda:0")  # Uncomment this to run on GPU
     model = torch.nn.Sequential(
@@ -329,9 +351,10 @@ def load_saved_model():
 
 if __name__ == "__main__":
     print("Task 1 - MNIST NN Test Case")
-    print("-" * 79)
+    print("-" * 99)
 
-    train_model = False
+    train_model = True
+    hidden_dim = 64
 
     if train_model:
         train_x = parse_imgs("train/train-images-idx3-ubyte.gz")
@@ -340,16 +363,20 @@ if __name__ == "__main__":
         test_y = parse_labels("test/t10k-labels-idx1-ubyte.gz")
 
         # Train our model
-        model = learn(train_x, train_y, test_x, test_y)
+        model = learn(train_x, train_y, test_x, test_y, hidden_dim=hidden_dim)
 
         # Test it out quickly
         model_rmse = RMSE(test_x, test_y, model)
-        print("Final RMSE Error = %.2f" % model_rmse)
+        model_accuracy = accuracy(test_x, test_y, model)
+        # print("Final RMSE Error = %.2f" % model_rmse)
+        print("Final Accuracy = %.2f%%" % model_accuracy)
     else:
         test_x = parse_imgs("test/t10k-images-idx3-ubyte.gz")
         test_y = parse_labels("test/t10k-labels-idx1-ubyte.gz")
 
-        model = load_saved_model()
+        model = load_saved_model(hidden_dim=hidden_dim)
         # Test out RMSE again to see if we loaded it correctly
         model_rmse = RMSE(test_x, test_y, model)
-        print("Final RMSE Error = %.2f" % model_rmse)
+        model_accuracy = accuracy(test_x, test_y, model)
+        # print("Final RMSE Error = %.2f" % model_rmse)
+        print("Final Accuracy = %.2f%%" % model_accuracy)
