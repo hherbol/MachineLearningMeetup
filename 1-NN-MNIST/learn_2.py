@@ -159,17 +159,19 @@ def get_model_accuracy(model, test_data):
 if __name__ == "__main__":
     # device = torch.device("cpu")
     device = torch.device("cuda:0")
+    net_name = "mnist_conv_cuda.nn"
 
-    train = True
+    train = False
     train_loader, test_loader = setup()
     if train:
         t0 = time.time()
         model = train_model(train_loader, device=device)
         t1 = time.time()
         print("\nTime to train model = %.2f seconds." % (t1 - t0))
-        torch.save(model.state_dict(), 'mnist_conv.nn')
+        torch.save(model.state_dict(), net_name)
     else:
-        model.load_state_dict(torch.load("mnist_conv.nn"))
+        model = ConvNet(device=device)
+        model.load_state_dict(torch.load(net_name))
         model.eval()
     accuracy = get_model_accuracy(model, test_loader)
     print("Model accuracy to test set is %.2f%%" % accuracy)
