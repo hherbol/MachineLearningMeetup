@@ -8,6 +8,7 @@ import time
 import torch
 import torchvision
 from torchvision import transforms
+from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader
 
 
@@ -159,13 +160,14 @@ def get_model_accuracy(model, test_data):
 if __name__ == "__main__":
     # device = torch.device("cpu")
     device = torch.device("cuda:0")
-    net_name = "mnist_conv_cuda.nn"
+    net_name = "mnist_conv_cuda_2.nn"
 
     train = False
     train_loader, test_loader = setup()
+
     if train:
         t0 = time.time()
-        model = train_model(train_loader, device=device)
+        model = train_model(train_loader, num_epochs=15, device=device)
         t1 = time.time()
         print("\nTime to train model = %.2f seconds." % (t1 - t0))
         torch.save(model.state_dict(), net_name)
