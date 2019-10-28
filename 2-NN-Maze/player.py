@@ -2,123 +2,202 @@
 Main background for this found here:
     https://adventuresinmachinelearning.com/convolutional-neural-networks-tutorial-in-pytorch/
 '''
-import copy
+import math
 import time
 import torch
+import random
+import numpy as np
+import torch.optim as optim
+from game import Game
 from utils_imgs import *
-from game import play_maze
+from itertools import count
+from collections import namedtuple
 
 
-class ConvNet(torch.nn.Module):
+class DQN(torch.nn.Module):
     '''
     This is our custom model that we are building.  For now, it is copied
     from the tutorial.
     '''
 
-    def __init__(self, device=torch.device("cpu"), hidden_dim=64):
-        super(ConvNet, self).__init__()
+    def __init__(self, hidden_dim=64):
+        super(DQN, self).__init__()
 
         self.layer1 = torch.nn.Sequential(
             torch.nn.Linear(5, hidden_dim),
             torch.nn.ReLU(),
-            torch.nn.Linear(hidden_dim, 7)
+            torch.nn.Linear(hidden_dim, 8)
         )
-
-        # self.layer1 = torch.nn.Sequential(
-        #     torch.nn.Conv2d(1, 32, kernel_size=5, stride=1, padding=2),
-        #     torch.nn.ReLU(),
-        #     torch.nn.MaxPool2d(kernel_size=2, stride=2))
-        # self.layer2 = torch.nn.Sequential(
-        #     torch.nn.Conv2d(32, 64, kernel_size=5, stride=1, padding=2),
-        #     torch.nn.ReLU(),
-        #     torch.nn.MaxPool2d(kernel_size=2, stride=2))
-        # self.drop_out = torch.nn.Dropout()
-        # self.fc1 = torch.nn.Linear(7 * 7 * 64, 1000)
-        # self.fc2 = torch.nn.Linear(1000, 10)
-        self.device = device
-        if "cuda" in str(device):
-            self.cuda(device)
 
     def forward(self, x):
         '''
         This outlines how the data flows through this NN.
         '''
         out = self.layer1(x)
-        # out = self.layer2(out)
-        # out = out.reshape(out.size(0), -1)
-        # out = self.drop_out(out)
-        # out = self.fc1(out)
-        # out = self.fc2(out)
         return out
 
 
-def train_model(maze, nBlocks,
-                max_iter=1000, max_game_loop=1000,
-                learning_rate=1e-4,
-                device=torch.device("cpu")):
+Transition = namedtuple('Transition',
+                        ('state', 'action', 'next_state', 'reward'))
+
+
+class ReplayMemory(object):
+
+    def __init__(self, capacity):
+        self.capacity = capacity
+        self.memory = []
+        self.position = 0
+
+    def push(self, *args):
+        """Saves a transition."""
+        if len(self.memory) < self.capacity:
+            self.memory.append(None)
+        self.memory[self.position] = Transition(*args)
+        self.position = (self.position + 1) % self.capacity
+
+    def sample(self, batch_size):
+        return random.sample(self.memory, batch_size)
+
+    def __len__(self):
+        return len(self.memory)
+
+
+def optimize_model(optimizer, policy_net, target_net, memory,
+                   BATCH_SIZE=128, GAMMA=0.999):
+    if len(memory) < BATCH_SIZE:
+        return
+    transitions = memory.sample(BATCH_SIZE)
+    # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
+    # detailed explanation). This converts batch-array of Transitions
+    # to Transition of batch-arrays.
+    batch = Transition(*zip(*transitions))
+
+    # Compute a mask of non-final states and concatenate the batch elements
+    # (a final state would've been the one after which simulation ended)
+    non_final_mask = torch.tensor(tuple(map(
+        lambda s: s is not None,
+        batch.next_state
+    )), dtype=torch.long)
+    non_final_next_states = torch.cat([
+        s for s in batch.next_state
+        if s is not None
+    ])
+
+    state_batch = torch.cat(batch.state)
+    action_batch = torch.cat(batch.action)
+    reward_batch = torch.cat(batch.reward)
+
+    # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
+    # columns of actions taken. These are the actions which would've been taken
+    # for each batch state according to policy_net
+    state_action_values = policy_net(state_batch).gather(1, action_batch)
+
+    # Compute V(s_{t+1}) for all next states.
+    # Expected values of actions for non_final_next_states are computed based
+    # on the "older" target_net; selecting their best reward with max(1)[0].
+    # This is merged based on the mask, such that we'll have either the
+    # expected state value or 0 in case the state was final.
+    next_state_values = torch.zeros(BATCH_SIZE)
+    next_state_values[non_final_mask] =\
+        target_net(non_final_next_states).max(1)[0].detach()
+    # Compute the expected Q values
+    expected_state_action_values = (next_state_values * GAMMA) + reward_batch
+
+    # Compute Huber loss
+    loss = torch.nn.functional.smooth_l1_loss(
+        state_action_values,
+        expected_state_action_values.unsqueeze(1)
+    )
+
+    # Optimize the model
+    optimizer.zero_grad()
+    loss.backward()
+    for param in policy_net.parameters():
+        param.grad.data.clamp_(-1, 1)
+    optimizer.step()
+
+
+def parse_action(action):
+    return torch.tensor(
+        [np.nanargmax(action.detach().numpy())],
+        dtype=torch.long
+    )
+
+
+def select_action(t, state, policy_net,
+                  EPS_START=0.9,
+                  EPS_END=0.05,
+                  EPS_DECAY=200.0):
+    sample = random.random()
+    eps_threshold = EPS_END + (EPS_START - EPS_END) * \
+        math.exp(-1. * t / EPS_DECAY)
+    if sample > eps_threshold:
+        with torch.no_grad():
+            # t.max(1) will return largest column value of each row.
+            # second column on max result is index of where max element was
+            # found, so we pick action with the larger expected reward.
+            return policy_net(state).max(1)[1].view(1, 1)
+    else:
+        return torch.tensor([[random.randrange(8)]], dtype=torch.long)
+
+
+def train_model(N_games=10,
+                max_game_loop=1000,
+                learning_rate=1e-4):
     '''
     This will train the NN.
     '''
-    model = ConvNet(device=device)
-    loss_fn = torch.nn.MSELoss(reduction='sum')
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    g = Game()
+    policy_net = DQN()
+    target_net = DQN()
+    target_net.load_state_dict(policy_net.state_dict())
+    target_net.eval()
 
-    for i in range(max_iter):
-        # Run the forward pass
-        count, _ = play_maze(model, copy.deepcopy(maze),
-                             nBlocks, max_game_loop=max_game_loop)
-        loss = loss_fn(torch.Tensor([count]), torch.Tensor([0]))
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+    optimizer = optim.RMSprop(policy_net.parameters())
 
-        if (i + 1) % 100 == 0:
-            print(loss)
+    # Unsure if I want to use this or not.  For now, skip
+    memory = ReplayMemory(10000)
 
-    return model
+    for i in range(N_games):
+        # Start a new "game"
+        g.reset()
 
+        state = g.get_state()
 
-def get_model_accuracy(model, test_data):
-    '''
-    '''
-    # We must turn it to eval mode to be able to test the model.  This
-    # prevents gradient calculations to be done.
-    model.eval()
-    with torch.no_grad():
-        correct = 0
-        total = 0
-        for images, labels in test_loader:
-            images, labels = images.to(model.device), labels.to(model.device)
-            outputs = model(images)
-            _, predicted = torch.max(outputs.data, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
+        for t in count():
+            # Select and perform an action
+            action = select_action(t, state, policy_net)
+            reward, done = g.step(action.item())
+            # reward = torch.tensor([reward])
 
-        return 100.0 * correct / total
+            # Store the transition in memory
+            if g.is_finished():
+                memory.push(state, action, None, reward)
+            else:
+                memory.push(state, action, g.get_state(), reward)
+
+            # Perform one step of the optimization (on the target network)
+            optimize_model(optimizer, policy_net, target_net, memory)
+
+        # Update the target network, copying all weights and biases in DQN
+        if i_episode % TARGET_UPDATE == 0:
+            target_net.load_state_dict(policy_net.state_dict())
 
 
 if __name__ == "__main__":
-    device = torch.device("cpu")
-    # device = torch.device("cuda:0")
     net_name = "mazeRunner.nn"
-    maze, nBlocks = load_maze("maze.png")
 
     train = True
     if train:
         t0 = time.time()
-        model = train_model(
-            copy.deepcopy(maze), nBlocks,
-            max_iter=100, max_game_loop=100,
-            device=device
-        )
+        model = train_model()
         t1 = time.time()
         print("\nTime to train model = %.2f seconds." % (t1 - t0))
         torch.save(model.state_dict(), net_name)
     else:
-        model = ConvNet(device=device)
+        model = DQN()
         model.load_state_dict(torch.load(net_name))
         model.eval()
 
-    lowest_iter, maze_solve = play_maze(model, copy.deepcopy(maze), nBlocks)
-
-    save_maze(maze_solve, name="solution")
+    g = Game()
+    g.play(model, slow=True, max_iter=1000)

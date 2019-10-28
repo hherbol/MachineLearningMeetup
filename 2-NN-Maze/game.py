@@ -10,64 +10,117 @@ For each move, the NN will have the following options available:
     1. Set current color to WHITE/RED/GREEN/BLUE
     2. Move left, right, up, or down
 '''
+import copy
+import time
 import torch
-import numpy as np
 from utils_imgs import *
 
 
-def play_maze(model, maze, nBlocks, max_game_loop=5000):
-    colors, inv_colors = get_colors()
-    MOVES = [
-        (0, -1),
-        (0, 1),
-        (-1, 0),
-        (1, 0)
-    ]
+class Game():
+    HELD_MAZE, nBlocks = load_maze("maze.png")
+    MAX_REWARD = 1000
 
-    ALL_MOVES = [(0, 0)] + MOVES
-
-    current_position = (0, 0)
-    final_position = (len(maze) - 1, len(maze) - 1)
-
-    count = 0
-    while current_position != final_position and count < max_game_loop:
-        count += 1
-        px, py = current_position
-        local_vision = [
-            maze[py + dy][px + dx]
-            if pos_chk(px + dx, py + dy, nBlocks)
-            else B_WALL
-            for dx, dy in ALL_MOVES
+    def __init__(self):
+        self.maze = copy.deepcopy(self.HELD_MAZE)
+        self.px, self.py = 0, 0
+        self.reward = self.MAX_REWARD
+        self.done = False
+        self.final_x, self.final_y = len(self.maze[0]) - 1, len(self.maze) - 1
+        self.MOVES = [
+            (0, -1),
+            (0, 1),
+            (-1, 0),
+            (1, 0)
         ]
-        choice = model(torch.Tensor(local_vision))
-        # Choice list will be:
-        #   0 - Set WHITE
-        #   1 - Set GREEN
-        #   2 - Set RED
-        #   3 - Set BLUE
-        #   4 - Move UP
-        #   5 - Move DOWN
-        #   6 - Move LEFT
-        #   7 - Move RIGHT
-        choice = np.nanargmax(choice.detach().numpy())
-        if choice < 4:
-            maze[py][px] = [
+        self.ALL_MOVES = [(0, 0)] + self.MOVES
+        self.colors, self.inv_colors = get_colors()
+
+    def __repr__(self):
+        state = self.get_state()[0]
+        mid, up, down, left, right =\
+            [["#", "W", "G", "R", "B"][int(i)] for i in state]
+        labels = (up, left, mid, right, down)
+        return '''
+# %s #
+%s %s %s
+# %s #
+''' % labels
+
+    def reset(self):
+        self.maze = copy.deepcopy(self.HELD_MAZE)
+        self.px, self.py = 0, 0
+        self.done = False
+
+    def is_finished(self):
+        self.done = (self.px, self.py) == (self.final_x, self.final_y)
+        return self.done
+
+    def get_state(self):
+        return torch.Tensor([[
+            self.maze[self.py + self.dy][self.px + self.dx]
+            if pos_chk(self.px + self.dx, self.py + self.dy, self.nBlocks)
+            else B_WALL
+            for self.dx, self.dy in self.ALL_MOVES
+        ]])
+
+    def step(self, action):
+        if action < 4:
+            self.maze[self.py][self.px] = [
                 B_PATH, B_VALID, B_BACKTRACK, B_ENDPOINT
-            ][choice]
+            ][action]
         else:
-            dx, dy = MOVES[choice - 4]
+            self.dx, self.dy = self.MOVES[action - 4]
             # Check if valid move.  If not, do nothing
-            if pos_chk(px + dx, py + dy, nBlocks) and\
-                    maze[py + dy][px + dx] != B_WALL:
-                current_position = (px + dx, py + dy)
-        count += 1
+            if pos_chk(self.px + self.dx, self.py + self.dy, self.nBlocks) and\
+                    self.maze[self.py + self.dy][self.px + self.dx] != B_WALL:
+                self.px, self.py = self.px + self.dx, self.py + self.dy
 
-    # SET THE LAST POSITION TO BE YELLOW
-    px, py = current_position
-    maze[py][px] = B_SOLUTION
+        self.reward -= 1
+        return torch.Tensor([self.reward]), self.is_finished()
 
-    return count, maze
+    def SET_WHITE(self):
+        self.step(0)
+
+    def SET_GREEN(self):
+        self.step(1)
+
+    def SET_RED(self):
+        self.step(2)
+
+    def SET_BLUE(self):
+        self.step(3)
+
+    def MOVE_UP(self):
+        self.step(4)
+
+    def MOVE_DOWN(self):
+        self.step(5)
+
+    def MOVE_LEFT(self):
+        self.step(6)
+
+    def MOVE_RIGHT(self):
+        self.step(7)
+
+    def play(self, model, slow=False, max_iter=1000):
+        for i in range(max_iter):
+            self.step(
+                np.nanargmax(
+                    model(self.get_state()).detach().numpy()
+                ))
+            if slow:
+                save_maze(self.maze, name="solution")
+                time.sleep(0.1)
+            if self.is_finished():
+                break
 
 
 if __name__ == "__main__":
-    count, solution = play_maze()
+    g = Game()
+    print(g)
+    g.SET_GREEN()
+    g.MOVE_DOWN()
+    print(g)
+    g.SET_GREEN()
+    g.MOVE_DOWN()
+    print(g)
