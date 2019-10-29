@@ -13,6 +13,7 @@ For each move, the NN will have the following options available:
 import copy
 import time
 import torch
+import numpy as np
 from utils_imgs import *
 
 
@@ -98,6 +99,9 @@ class Game():
 
         return torch.Tensor([reward]), self.is_finished()
 
+    def save_maze(self, name):
+        save_maze(self.maze, name=name)
+
     def SET_WHITE(self):
         self.step(0)
 
@@ -124,10 +128,10 @@ class Game():
 
     def play(self, model, slow=False, max_iter=1000):
         for i in range(max_iter):
-            self.step(
-                np.nanargmax(
-                    model(self.get_state()).detach().numpy()
-                ))
+            action = np.nanargmax(
+                model(self.get_state()).detach().numpy()
+            )
+            self.step(action)
             if slow:
                 save_maze(self.maze, name="solution")
                 time.sleep(0.1)

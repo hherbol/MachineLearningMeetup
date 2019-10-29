@@ -193,8 +193,13 @@ def train_model(N_games=10,
         # Update the target network, copying all weights and biases in DQN
         if i % TARGET_UPDATE == 0:
             target_net.load_state_dict(policy_net.state_dict())
+
+        g.save_maze("iter_%d" % i)
+
     sys.stdout.write("\r|" + "=" * N_games + "| DONE!\n")
     sys.stdout.flush()
+
+    return policy_net
 
 
 if __name__ == "__main__":
@@ -212,5 +217,7 @@ if __name__ == "__main__":
         model.load_state_dict(torch.load(net_name))
         model.eval()
 
+    print("\nRunning...")
     g = Game()
     g.play(model, slow=True, max_iter=1000)
+    print("DONE!")
