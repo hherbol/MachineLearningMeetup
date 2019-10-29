@@ -19,6 +19,7 @@ from utils_imgs import *
 class Game():
     HELD_MAZE, nBlocks = load_maze("maze.png")
     MAX_ITER = 100000
+    # MAX_ITER = 1024
 
     def __init__(self):
         self.maze = copy.deepcopy(self.HELD_MAZE)
@@ -57,7 +58,7 @@ class Game():
         return self.done
 
     def timed_out(self):
-        return self.iter <= 0
+        return self.iter < 0
 
     def get_state(self):
         return torch.Tensor([[

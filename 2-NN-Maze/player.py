@@ -99,6 +99,7 @@ def optimize_model(optimizer, policy_net, target_net, memory,
     # This is merged based on the mask, such that we'll have either the
     # expected state value or 0 in case the state was final.
     next_state_values = torch.zeros(BATCH_SIZE)
+    # print("\t", non_final_next_states.shape)
     next_state_values[non_final_mask] =\
         target_net(non_final_next_states).max(1)[0].detach()
     # Compute the expected Q values
@@ -144,7 +145,8 @@ def select_action(t, state, policy_net,
 
 def train_model(N_games=10,
                 max_game_loop=1000,
-                learning_rate=1e-4):
+                learning_rate=1e-4,
+                TARGET_UPDATE=2):
     '''
     This will train the NN.
     '''
@@ -174,19 +176,22 @@ def train_model(N_games=10,
             # Select and perform an action
             action = select_action(t, state, policy_net)
             reward, done = g.step(action.item())
-            # reward = torch.tensor([reward])
 
             # Store the transition in memory
             if g.is_finished() or g.timed_out():
-                memory.push(state, action, None, reward)
+                # memory.push(state, action, None, reward)
+                memory.push(state, action, g.get_state(), reward)
             else:
                 memory.push(state, action, g.get_state(), reward)
+
+            if g.timed_out():
+                break
 
             # Perform one step of the optimization (on the target network)
             optimize_model(optimizer, policy_net, target_net, memory)
 
         # Update the target network, copying all weights and biases in DQN
-        if i_episode % TARGET_UPDATE == 0:
+        if i % TARGET_UPDATE == 0:
             target_net.load_state_dict(policy_net.state_dict())
     sys.stdout.write("\r|" + "=" * N_games + "| DONE!\n")
     sys.stdout.flush()
