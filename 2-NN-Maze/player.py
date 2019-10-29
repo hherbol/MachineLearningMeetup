@@ -129,7 +129,7 @@ def parse_action(action):
 def select_action(t, state, policy_net,
                   EPS_START=0.9,
                   EPS_END=0.05,
-                  EPS_DECAY=200.0):
+                  EPS_DECAY=10.0):
     sample = random.random()
     eps_threshold = EPS_END + (EPS_START - EPS_END) * \
         math.exp(-1. * t / EPS_DECAY)
@@ -193,6 +193,7 @@ def train_model(N_games=20, TARGET_UPDATE=2):
 
         g.save_maze("iter_%d" % i)
 
+    target_net.load_state_dict(policy_net.state_dict())
     sys.stdout.write("\r|" + "=" * N_games + "| DONE!\n")
     sys.stdout.flush()
 
@@ -202,7 +203,7 @@ def train_model(N_games=20, TARGET_UPDATE=2):
 if __name__ == "__main__":
     net_name = "mazeRunner.nn"
 
-    train = False
+    train = True
     if train:
         t0 = time.time()
         model = train_model()

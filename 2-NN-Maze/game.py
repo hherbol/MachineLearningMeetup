@@ -81,7 +81,11 @@ class Game():
                 reward = -0.8
             else:
                 self.maze[self.py][self.px] = new_color
-                reward = -0.45
+                # If we change the color to white (trying to game the system
+                # by taking advantage of the white space bonus) we have a
+                # penalty
+                if new_color == B_PATH:
+                    reward = -0.45
         else:
             self.dx, self.dy = self.MOVES[action - 4]
             # Check if valid move.  If not, do nothing
@@ -90,6 +94,8 @@ class Game():
             if in_bounds and\
                     self.maze[self.py + self.dy][self.px + self.dx] != B_WALL:
                 self.px, self.py = self.px + self.dx, self.py + self.dy
+                # If we move to a white space, we have a small benefit
+                reward = -0.35
             elif not in_bounds:
                 reward = -0.8
             else:
