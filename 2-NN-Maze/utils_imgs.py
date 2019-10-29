@@ -76,7 +76,7 @@ def save_maze(maze, blockSize=10, name="maze"):
             y = jy * blockSize
             for i in range(blockSize):
                 for j in range(blockSize):
-                    img.putpixel((x + i, y + j), colors[maze[jx][jy]])
+                    img.putpixel((x + i, y + j), colors[maze[jy][jx]])
 
     if not name.endswith(".png"):
         name += ".png"
@@ -114,7 +114,7 @@ def load_maze(filename, blockSize=10):
         for j, y in enumerate(range(0, dims, dims // nBlocks)):
             px = x
             py = y
-            maze[i][j] = color_map[img.getpixel((px, py))]
+            maze[j][i] = color_map[img.getpixel((px, py))]
 
     return maze, nBlocks
 

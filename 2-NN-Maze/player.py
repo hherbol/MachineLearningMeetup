@@ -2,6 +2,7 @@
 Main background for this found here:
     https://adventuresinmachinelearning.com/convolutional-neural-networks-tutorial-in-pytorch/
 '''
+import sys
 import math
 import time
 import torch
@@ -158,12 +159,17 @@ def train_model(N_games=10,
     # Unsure if I want to use this or not.  For now, skip
     memory = ReplayMemory(10000)
 
+    sys.stdout.write("Training...\n")
+    sys.stdout.flush()
+
     for i in range(N_games):
         # Start a new "game"
         g.reset()
 
         state = g.get_state()
 
+        sys.stdout.write("\r|" + "=" * i + "-" * (N_games - i) + "|")
+        sys.stdout.flush()
         for t in count():
             # Select and perform an action
             action = select_action(t, state, policy_net)
@@ -171,7 +177,7 @@ def train_model(N_games=10,
             # reward = torch.tensor([reward])
 
             # Store the transition in memory
-            if g.is_finished():
+            if g.is_finished() or g.timed_out():
                 memory.push(state, action, None, reward)
             else:
                 memory.push(state, action, g.get_state(), reward)
@@ -182,6 +188,8 @@ def train_model(N_games=10,
         # Update the target network, copying all weights and biases in DQN
         if i_episode % TARGET_UPDATE == 0:
             target_net.load_state_dict(policy_net.state_dict())
+    sys.stdout.write("\r|" + "=" * N_games + "| DONE!\n")
+    sys.stdout.flush()
 
 
 if __name__ == "__main__":

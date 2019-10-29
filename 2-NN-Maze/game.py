@@ -18,12 +18,11 @@ from utils_imgs import *
 
 class Game():
     HELD_MAZE, nBlocks = load_maze("maze.png")
-    MAX_REWARD = 1000
+    MAX_ITER = 100000
 
     def __init__(self):
         self.maze = copy.deepcopy(self.HELD_MAZE)
         self.px, self.py = 0, 0
-        self.reward = self.MAX_REWARD
         self.done = False
         self.final_x, self.final_y = len(self.maze[0]) - 1, len(self.maze) - 1
         self.MOVES = [
@@ -34,6 +33,7 @@ class Game():
         ]
         self.ALL_MOVES = [(0, 0)] + self.MOVES
         self.colors, self.inv_colors = get_colors()
+        self.iter = self.MAX_ITER
 
     def __repr__(self):
         state = self.get_state()[0]
@@ -50,10 +50,14 @@ class Game():
         self.maze = copy.deepcopy(self.HELD_MAZE)
         self.px, self.py = 0, 0
         self.done = False
+        self.iter = self.MAX_ITER
 
     def is_finished(self):
         self.done = (self.px, self.py) == (self.final_x, self.final_y)
         return self.done
+
+    def timed_out(self):
+        return self.iter <= 0
 
     def get_state(self):
         return torch.Tensor([[
@@ -63,20 +67,35 @@ class Game():
             for self.dx, self.dy in self.ALL_MOVES
         ]])
 
-    def step(self, action):
+    def step(self, action, slow=False):
+        reward = -0.4
+        self.iter -= 1
+
         if action < 4:
             self.maze[self.py][self.px] = [
                 B_PATH, B_VALID, B_BACKTRACK, B_ENDPOINT
             ][action]
+            reward = -0.45
         else:
             self.dx, self.dy = self.MOVES[action - 4]
             # Check if valid move.  If not, do nothing
-            if pos_chk(self.px + self.dx, self.py + self.dy, self.nBlocks) and\
+            in_bounds = pos_chk(self.px + self.dx, self.py + self.dy,
+                                self.nBlocks)
+            if in_bounds and\
                     self.maze[self.py + self.dy][self.px + self.dx] != B_WALL:
                 self.px, self.py = self.px + self.dx, self.py + self.dy
+            elif not in_bounds:
+                reward = -0.8
+            else:
+                reward = -0.8
 
-        self.reward -= 1
-        return torch.Tensor([self.reward]), self.is_finished()
+        if self.is_finished():
+            reward = 1.0
+
+        if slow:
+            save_maze(self.maze, name="steps")
+
+        return torch.Tensor([reward]), self.is_finished()
 
     def SET_WHITE(self):
         self.step(0)
@@ -117,6 +136,7 @@ class Game():
 
 if __name__ == "__main__":
     g = Game()
+    print(g.maze[0][:5])
     print(g)
     g.SET_GREEN()
     g.MOVE_DOWN()
