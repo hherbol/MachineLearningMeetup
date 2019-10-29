@@ -74,10 +74,14 @@ class Game():
         self.iter -= 1
 
         if action < 4:
-            self.maze[self.py][self.px] = [
+            new_color = [
                 B_PATH, B_VALID, B_BACKTRACK, B_ENDPOINT
             ][action]
-            reward = -0.45
+            if self.maze[self.py][self.px] == new_color:
+                reward = -0.8
+            else:
+                self.maze[self.py][self.px] = new_color
+                reward = -0.45
         else:
             self.dx, self.dy = self.MOVES[action - 4]
             # Check if valid move.  If not, do nothing
@@ -141,10 +145,12 @@ class Game():
 
 if __name__ == "__main__":
     g = Game()
-    print(g.maze[0][:5])
     print(g)
     g.SET_GREEN()
-    g.MOVE_DOWN()
+    g.MOVE_RIGHT()
+    print(g)
+    g.SET_GREEN()
+    g.MOVE_RIGHT()
     print(g)
     g.SET_GREEN()
     g.MOVE_DOWN()

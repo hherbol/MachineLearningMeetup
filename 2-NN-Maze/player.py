@@ -143,10 +143,7 @@ def select_action(t, state, policy_net,
         return torch.tensor([[random.randrange(8)]], dtype=torch.long)
 
 
-def train_model(N_games=10,
-                max_game_loop=1000,
-                learning_rate=1e-4,
-                TARGET_UPDATE=2):
+def train_model(N_games=20, TARGET_UPDATE=2):
     '''
     This will train the NN.
     '''
@@ -205,7 +202,7 @@ def train_model(N_games=10,
 if __name__ == "__main__":
     net_name = "mazeRunner.nn"
 
-    train = True
+    train = False
     if train:
         t0 = time.time()
         model = train_model()
