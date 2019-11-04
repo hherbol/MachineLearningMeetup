@@ -21,13 +21,17 @@ class DQN(torch.nn.Module):
     from the tutorial.
     '''
 
-    def __init__(self, hidden_dim=64):
+    def __init__(self, hidden_dim_1=64, hidden_dim_2=32, hidden_dim_3=16):
         super(DQN, self).__init__()
 
         self.layer1 = torch.nn.Sequential(
-            torch.nn.Linear(5, hidden_dim),
+            torch.nn.Linear(5, hidden_dim_1),
             torch.nn.ReLU(),
-            torch.nn.Linear(hidden_dim, 8)
+            torch.nn.Linear(hidden_dim_1, hidden_dim_2),
+            torch.nn.ReLU(),
+            # torch.nn.Linear(hidden_dim_2, hidden_dim_3),
+            # torch.nn.ReLU(),
+            torch.nn.Linear(hidden_dim_2, 6)
         )
 
     def forward(self, x):
@@ -64,7 +68,7 @@ class ReplayMemory(object):
 
 
 def optimize_model(optimizer, policy_net, target_net, memory,
-                   BATCH_SIZE=128, GAMMA=0.999):
+                   device, BATCH_SIZE=128, GAMMA=0.999):
     if len(memory) < BATCH_SIZE:
         return
     transitions = memory.sample(BATCH_SIZE)
@@ -78,7 +82,7 @@ def optimize_model(optimizer, policy_net, target_net, memory,
     non_final_mask = torch.tensor(tuple(map(
         lambda s: s is not None,
         batch.next_state
-    )), dtype=torch.long)
+    )), device=device, dtype=torch.long)
     non_final_next_states = torch.cat([
         s for s in batch.next_state
         if s is not None
@@ -98,7 +102,7 @@ def optimize_model(optimizer, policy_net, target_net, memory,
     # on the "older" target_net; selecting their best reward with max(1)[0].
     # This is merged based on the mask, such that we'll have either the
     # expected state value or 0 in case the state was final.
-    next_state_values = torch.zeros(BATCH_SIZE)
+    next_state_values = torch.zeros(BATCH_SIZE, device=device)
     # print("\t", non_final_next_states.shape)
     next_state_values[non_final_mask] =\
         target_net(non_final_next_states).max(1)[0].detach()
@@ -126,7 +130,7 @@ def parse_action(action):
     )
 
 
-def select_action(t, state, policy_net,
+def select_action(device, t, state, policy_net,
                   EPS_START=0.9,
                   EPS_END=0.05,
                   EPS_DECAY=10.0):
@@ -140,16 +144,17 @@ def select_action(t, state, policy_net,
             # found, so we pick action with the larger expected reward.
             return policy_net(state).max(1)[1].view(1, 1)
     else:
-        return torch.tensor([[random.randrange(8)]], dtype=torch.long)
+        return torch.tensor([[random.randrange(6)]],
+                            device=device, dtype=torch.long)
 
 
-def train_model(N_games=20, TARGET_UPDATE=2):
+def train_model(device, rand_rotate=True, N_games=20, TARGET_UPDATE=2):
     '''
     This will train the NN.
     '''
     g = Game()
-    policy_net = DQN()
-    target_net = DQN()
+    policy_net = DQN().to(device)
+    target_net = DQN().to(device)
     target_net.load_state_dict(policy_net.state_dict())
     target_net.eval()
 
@@ -165,27 +170,32 @@ def train_model(N_games=20, TARGET_UPDATE=2):
         # Start a new "game"
         g.reset()
 
-        state = g.get_state()
+        state = g.get_state(rand_rotate=rand_rotate).to(device)
 
         sys.stdout.write("\r|" + "=" * i + "-" * (N_games - i) + "|")
         sys.stdout.flush()
         for t in count():
             # Select and perform an action
-            action = select_action(t, state, policy_net)
+            action = select_action(device, t, state, policy_net)
             reward, done = g.step(action.item())
+            reward = torch.tensor([reward], device=device)
 
             # Store the transition in memory
             if g.is_finished() or g.timed_out():
                 # memory.push(state, action, None, reward)
-                memory.push(state, action, g.get_state(), reward)
+                memory.push(
+                    state, action,
+                    g.get_state(rand_rotate=rand_rotate).to(device), reward)
             else:
-                memory.push(state, action, g.get_state(), reward)
+                memory.push(
+                    state, action,
+                    g.get_state(rand_rotate=rand_rotate).to(device), reward)
 
             if g.timed_out():
                 break
 
             # Perform one step of the optimization (on the target network)
-            optimize_model(optimizer, policy_net, target_net, memory)
+            optimize_model(optimizer, policy_net, target_net, memory, device)
 
         # Update the target network, copying all weights and biases in DQN
         if i % TARGET_UPDATE == 0:
@@ -202,11 +212,19 @@ def train_model(N_games=20, TARGET_UPDATE=2):
 
 if __name__ == "__main__":
     net_name = "mazeRunner.nn"
-
+    run_on_gpu = False
     train = True
+
+    ##########################################################################
+
+    if run_on_gpu:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device("cpu")
+
     if train:
         t0 = time.time()
-        model = train_model()
+        model = train_model(device)
         t1 = time.time()
         print("\nTime to train model = %.2f seconds." % (t1 - t0))
         torch.save(model.state_dict(), net_name)
